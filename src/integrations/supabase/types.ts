@@ -14,7 +14,74 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          next_due_date: string
+          payment_date: string
+          student_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          next_due_date: string
+          payment_date: string
+          student_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          next_due_date?: string
+          payment_date?: string
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      students: {
+        Row: {
+          created_at: string
+          id: string
+          instrument: string
+          joining_date: string
+          monthly_fee: number
+          name: string
+          next_due_date: string
+          phone: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instrument: string
+          joining_date: string
+          monthly_fee: number
+          name: string
+          next_due_date: string
+          phone: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instrument?: string
+          joining_date?: string
+          monthly_fee?: number
+          name?: string
+          next_due_date?: string
+          phone?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
