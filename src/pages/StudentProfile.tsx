@@ -1,18 +1,25 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { studentService } from "@/services/studentService";
+import { paymentService } from "@/services/paymentService";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Check, IndianRupee } from "lucide-react";
 import { toast } from "sonner";
-import { getStudentStatus, getStatusColor, getStatusLabel, formatDate, formatCurrency, calculateNextDueDate } from "@/lib/dateUtils";
-import { format } from "date-fns";
+import { getStudentStatus, getStatusColor, getStatusLabel, formatDate, formatCurrency } from "@/lib/dateUtils";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Student = Tables<"students">;
 type Payment = Tables<"payments">;
+
+const PAYMENT_METHODS = ["Cash", "UPI", "Bank Transfer", "Card", "Other"];
 
 export default function StudentProfile() {
   const { id } = useParams();
@@ -20,33 +27,37 @@ export default function StudentProfile() {
   const [student, setStudent] = useState<Student | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("Cash");
 
   useEffect(() => {
     if (id) fetchData(id);
   }, [id]);
 
   const fetchData = async (studentId: string) => {
-    const { data: s } = await supabase.from("students").select("*").eq("id", studentId).single();
+    const s = await studentService.getById(studentId);
     setStudent(s);
-    const { data: p } = await supabase.from("payments").select("*").eq("student_id", studentId).order("payment_date", { ascending: false });
-    setPayments(p || []);
+    const p = await paymentService.getByStudentId(studentId);
+    setPayments(p);
     setLoading(false);
   };
 
-  const handlePayFee = async () => {
+  const openPayModal = () => {
     if (!student) return;
-    const today = format(new Date(), "yyyy-MM-dd");
-    const nextDue = calculateNextDueDate(today);
+    setPayAmount(String(student.monthly_fee));
+    setPayMethod("Cash");
+    setShowPayModal(true);
+  };
 
-    await supabase.from("payments").insert({
-      student_id: student.id,
-      amount: student.monthly_fee,
-      payment_date: today,
-      next_due_date: nextDue,
-    });
-    await supabase.from("students").update({ next_due_date: nextDue }).eq("id", student.id);
-    toast.success("Fee recorded!");
-    fetchData(student.id);
+  const handleCollectFee = async () => {
+    if (!student || !payAmount) return;
+    try {
+      await paymentService.collectFee(student.id, student.name, parseInt(payAmount), student.next_due_date, payMethod);
+      toast.success("Fee recorded!");
+      setShowPayModal(false);
+      fetchData(student.id);
+    } catch (err: any) { toast.error(err.message); }
   };
 
   if (loading || !student) {
@@ -82,18 +93,14 @@ export default function StudentProfile() {
               <div className="col-span-2"><span className="text-muted-foreground">Next Due:</span> {formatDate(student.next_due_date)}</div>
             </div>
 
-            {status !== "paid" && (
-              <Button onClick={handlePayFee} className="w-full h-12 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold mt-2">
-                <Check className="h-5 w-5 mr-2" /> Fee Received – {formatCurrency(student.monthly_fee)}
-              </Button>
-            )}
+            <Button onClick={openPayModal} className="w-full h-12 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold mt-2">
+              <IndianRupee className="h-5 w-5 mr-2" /> Collect Fee – {formatCurrency(student.monthly_fee)}
+            </Button>
           </CardContent>
         </Card>
 
         <Card className="shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Payment History</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Payment History</CardTitle></CardHeader>
           <CardContent className="p-0">
             {payments.length === 0 ? (
               <p className="text-sm text-muted-foreground p-4">No payments recorded yet</p>
@@ -104,6 +111,7 @@ export default function StudentProfile() {
                     <div>
                       <p className="text-sm font-medium">{formatDate(p.payment_date)}</p>
                       <p className="text-xs text-muted-foreground">Next due: {formatDate(p.next_due_date)}</p>
+                      {(p as any).method && <p className="text-xs text-muted-foreground">via {(p as any).method}</p>}
                     </div>
                     <p className="font-semibold text-sm text-success">{formatCurrency(p.amount)}</p>
                   </div>
@@ -113,6 +121,26 @@ export default function StudentProfile() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Collect Fee Modal */}
+      <Dialog open={showPayModal} onOpenChange={v => { if (!v) setShowPayModal(false); }}>
+        <DialogContent className="max-w-sm mx-auto">
+          <DialogHeader><DialogTitle>Collect Fee – {student.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label className="text-sm">Amount (₹)</Label><Input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-11" /></div>
+            <div>
+              <Label className="text-sm">Payment Method</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+                <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleCollectFee} className="w-full h-12 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold">
+              <Check className="h-5 w-5 mr-2" /> Confirm Payment
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

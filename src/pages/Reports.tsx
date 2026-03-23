@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { paymentService } from "@/services/paymentService";
+import { studentService } from "@/services/studentService";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Download } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { formatCurrency } from "@/lib/dateUtils";
 import { downloadCSV } from "@/lib/csvExport";
+import { supabase } from "@/integrations/supabase/client";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -22,9 +24,7 @@ export default function Reports() {
   const [chartData, setChartData] = useState<{ month: string; amount: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchReport();
-  }, [month, year]);
+  useEffect(() => { fetchReport(); }, [month, year]);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -33,33 +33,20 @@ export default function Reports() {
     const start = `${y}-${String(m).padStart(2, "0")}-01`;
     const end = `${y}-${String(m).padStart(2, "0")}-${new Date(y, m, 0).getDate()}`;
 
-    const { data: students } = await supabase.from("students").select("*");
-    const { data: payments } = await supabase.from("payments").select("amount").gte("payment_date", start).lte("payment_date", end);
+    const students = await studentService.getAll();
+    const collected = await paymentService.getCollectedInRange(start, end);
+    const chart = await paymentService.getMonthlyRevenue(y);
 
-    const total = (students || []).length;
-    const expected = (students || []).reduce((s, st) => s + st.monthly_fee, 0);
-    const collected = (payments || []).reduce((s, p) => s + p.amount, 0);
-
-    setTotalStudents(total);
-    setExpectedFees(expected);
+    setTotalStudents(students.length);
+    setExpectedFees(students.reduce((s, st) => s + st.monthly_fee, 0));
     setCollectedFees(collected);
-
-    // Chart data for selected year
-    const chart: { month: string; amount: number }[] = [];
-    for (let i = 0; i < 12; i++) {
-      const ms = `${y}-${String(i + 1).padStart(2, "0")}`;
-      const mStart = `${ms}-01`;
-      const mEnd = `${ms}-${new Date(y, i + 1, 0).getDate()}`;
-      const { data: mp } = await supabase.from("payments").select("amount").gte("payment_date", mStart).lte("payment_date", mEnd);
-      chart.push({ month: MONTHS[i].substring(0, 3), amount: (mp || []).reduce((s, p) => s + p.amount, 0) });
-    }
     setChartData(chart);
     setLoading(false);
   };
 
   const exportStudents = async () => {
-    const { data } = await supabase.from("students").select("*");
-    if (data) downloadCSV(data, `students_${year}_${MONTHS[parseInt(month)]}`);
+    const data = await studentService.getAll();
+    if (data.length > 0) downloadCSV(data, `students_${year}_${MONTHS[parseInt(month)]}`);
   };
 
   const exportPayments = async () => {
@@ -68,12 +55,10 @@ export default function Reports() {
     const start = `${y}-${String(m).padStart(2, "0")}-01`;
     const end = `${y}-${String(m).padStart(2, "0")}-${new Date(y, m, 0).getDate()}`;
     const { data } = await supabase.from("payments").select("*, students(name)").gte("payment_date", start).lte("payment_date", end);
-    if (data) {
+    if (data && data.length > 0) {
       const flat = data.map((p: any) => ({
-        student_name: p.students?.name || "",
-        amount: p.amount,
-        payment_date: p.payment_date,
-        next_due_date: p.next_due_date,
+        student_name: p.students?.name || "", amount: p.amount,
+        payment_date: p.payment_date, next_due_date: p.next_due_date, method: p.method || "",
       }));
       downloadCSV(flat, `payments_${year}_${MONTHS[parseInt(month)]}`);
     }
@@ -91,18 +76,14 @@ export default function Reports() {
             <Label className="text-xs">Month</Label>
             <Select value={month} onValueChange={setMonth}>
               <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}
-              </SelectContent>
+              <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="flex-1">
             <Label className="text-xs">Year</Label>
             <Select value={year} onValueChange={setYear}>
               <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-              </SelectContent>
+              <SelectContent>{years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -130,9 +111,7 @@ export default function Reports() {
             </div>
 
             <Card className="shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Revenue – {year}</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Revenue – {year}</CardTitle></CardHeader>
               <CardContent className="p-2">
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={chartData}>
