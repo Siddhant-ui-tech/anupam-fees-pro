@@ -14,11 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: string | null
+          id: string
+          student_name: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          student_name: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          student_name?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number
           created_at: string
           id: string
+          method: string | null
           next_due_date: string
           payment_date: string
           student_id: string
@@ -27,6 +52,7 @@ export type Database = {
           amount: number
           created_at?: string
           id?: string
+          method?: string | null
           next_due_date: string
           payment_date: string
           student_id: string
@@ -35,6 +61,7 @@ export type Database = {
           amount?: number
           created_at?: string
           id?: string
+          method?: string | null
           next_due_date?: string
           payment_date?: string
           student_id?: string

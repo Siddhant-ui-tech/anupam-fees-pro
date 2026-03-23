@@ -1,40 +1,39 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAppStore } from "@/store/useAppStore";
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, IndianRupee } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/dateUtils";
 
-interface PaymentWithStudent {
-  id: string;
-  amount: number;
-  payment_date: string;
-  next_due_date: string;
-  students: { name: string } | null;
-}
+const MONTHS = ["All","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 export default function Payments() {
-  const [payments, setPayments] = useState<PaymentWithStudent[]>([]);
+  const { payments, fetchPayments } = useAppStore();
   const [search, setSearch] = useState("");
+  const [monthFilter, setMonthFilter] = useState("All");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchPayments();
+    fetchPayments().then(() => setLoading(false));
+
+    const channel = supabase
+      .channel("payments-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, () => fetchPayments())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const fetchPayments = async () => {
-    const { data } = await supabase
-      .from("payments")
-      .select("id, amount, payment_date, next_due_date, students(name)")
-      .order("payment_date", { ascending: false });
-    setPayments((data as unknown as PaymentWithStudent[]) || []);
-    setLoading(false);
-  };
-
-  const filtered = payments.filter(p =>
-    (p.students?.name || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = payments.filter(p => {
+    const nameMatch = (p.students?.name || "").toLowerCase().includes(search.toLowerCase());
+    if (monthFilter === "All") return nameMatch;
+    const pMonth = new Date(p.payment_date).toLocaleString("default", { month: "short" });
+    return nameMatch && pMonth === monthFilter;
+  });
 
   if (loading) {
     return (
@@ -51,14 +50,15 @@ export default function Payments() {
       <div className="p-4 space-y-3 animate-fade-in">
         <h2 className="text-lg font-bold">Payments</h2>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by student..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 h-11"
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search by student..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-11" />
+          </div>
+          <Select value={monthFilter} onValueChange={setMonthFilter}>
+            <SelectTrigger className="h-11 w-24"><SelectValue /></SelectTrigger>
+            <SelectContent>{MONTHS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
 
         <Card className="shadow-sm">
@@ -73,8 +73,13 @@ export default function Payments() {
                       <p className="font-medium text-sm">{p.students?.name || "Unknown"}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(p.payment_date)}</p>
                       <p className="text-xs text-muted-foreground">Next due: {formatDate(p.next_due_date)}</p>
+                      {p.method && (
+                        <Badge variant="outline" className="text-[10px] mt-1">{p.method}</Badge>
+                      )}
                     </div>
-                    <p className="font-semibold text-sm text-success">{formatCurrency(p.amount)}</p>
+                    <div className="text-right">
+                      <p className="font-semibold text-sm text-success">{formatCurrency(p.amount)}</p>
+                    </div>
                   </div>
                 ))}
               </div>
