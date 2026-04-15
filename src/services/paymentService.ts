@@ -22,19 +22,19 @@ export const paymentService = {
     return data || [];
   },
 
-  async collectFee(studentId: string, studentName: string, amount: number, dueDate: string, method: string = "cash") {
-    const today = format(new Date(), "yyyy-MM-dd");
-    const todayDate = startOfDay(new Date());
+  async collectFee(studentId: string, studentName: string, amount: number, dueDate: string, method: string = "cash", paymentDate?: string) {
+    const payDate = paymentDate || format(new Date(), "yyyy-MM-dd");
+    const payDateObj = startOfDay(new Date(payDate));
     const dueDateObj = startOfDay(new Date(dueDate));
 
-    // If today > due_date: next = due_date + 1 month, else next = today + 1 month
-    const baseDate = isBefore(dueDateObj, todayDate) ? dueDateObj : todayDate;
+    // If payment_date > due_date: next = due_date + 1 month, else next = payment_date + 1 month
+    const baseDate = isBefore(dueDateObj, payDateObj) ? dueDateObj : payDateObj;
     const nextDue = format(addMonths(baseDate, 1), "yyyy-MM-dd");
 
     const { error: payError } = await supabase.from("payments").insert({
       student_id: studentId,
       amount,
-      payment_date: today,
+      payment_date: payDate,
       next_due_date: nextDue,
       method,
     });
@@ -46,7 +46,8 @@ export const paymentService = {
       .eq("id", studentId);
     if (updateError) throw updateError;
 
-    await logService.log("Fee Collected", studentName, `₹${amount} via ${method}`);
+    const formattedDate = format(payDateObj, "d MMMM");
+    await logService.log("Fee Collected", studentName, `₹${amount} collected on ${formattedDate} via ${method}`);
     return nextDue;
   },
 
