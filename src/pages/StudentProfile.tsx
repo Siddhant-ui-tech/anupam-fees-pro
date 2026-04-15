@@ -11,8 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Check, IndianRupee } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ArrowLeft, Check, IndianRupee, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { getStudentStatus, getStatusColor, getStatusLabel, formatDate, formatCurrency } from "@/lib/dateUtils";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -30,6 +34,7 @@ export default function StudentProfile() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("Cash");
+  const [payDate, setPayDate] = useState<Date>(new Date());
 
   useEffect(() => {
     if (id) fetchData(id);
@@ -47,13 +52,15 @@ export default function StudentProfile() {
     if (!student) return;
     setPayAmount(String(student.monthly_fee));
     setPayMethod("Cash");
+    setPayDate(new Date());
     setShowPayModal(true);
   };
 
   const handleCollectFee = async () => {
     if (!student || !payAmount) return;
     try {
-      await paymentService.collectFee(student.id, student.name, parseInt(payAmount), student.next_due_date, payMethod);
+      const selectedDate = format(payDate, "yyyy-MM-dd");
+      await paymentService.collectFee(student.id, student.name, parseInt(payAmount), student.next_due_date, payMethod, selectedDate);
       toast.success("Fee recorded!");
       setShowPayModal(false);
       fetchData(student.id);
@@ -128,6 +135,20 @@ export default function StudentProfile() {
           <DialogHeader><DialogTitle>Collect Fee – {student.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label className="text-sm">Amount (₹)</Label><Input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-11" /></div>
+            <div>
+              <Label className="text-sm">Payment Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full h-11 justify-start text-left font-normal", !payDate && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {payDate ? format(payDate, "dd MMM yyyy") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={payDate} onSelect={(d) => d && setPayDate(d)} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+            </div>
             <div>
               <Label className="text-sm">Payment Method</Label>
               <Select value={payMethod} onValueChange={setPayMethod}>
