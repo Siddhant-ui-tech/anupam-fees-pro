@@ -7,23 +7,16 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, Check, IndianRupee, CalendarIcon } from "lucide-react";
+import { CollectFeeModal } from "@/components/CollectFeeModal";
+import { ArrowLeft, IndianRupee } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import { getStudentStatus, getStatusColor, getStatusLabel, formatDate, formatCurrency } from "@/lib/dateUtils";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Student = Tables<"students">;
 type Payment = Tables<"payments">;
 
-const PAYMENT_METHODS = ["Cash", "UPI", "Bank Transfer", "Card", "Other"];
+
 
 export default function StudentProfile() {
   const { id } = useParams();
@@ -32,9 +25,6 @@ export default function StudentProfile() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPayModal, setShowPayModal] = useState(false);
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("Cash");
-  const [payDate, setPayDate] = useState<Date>(new Date());
 
   useEffect(() => {
     if (id) fetchData(id);
@@ -50,17 +40,13 @@ export default function StudentProfile() {
 
   const openPayModal = () => {
     if (!student) return;
-    setPayAmount(String(student.monthly_fee));
-    setPayMethod("Cash");
-    setPayDate(new Date());
     setShowPayModal(true);
   };
 
-  const handleCollectFee = async () => {
-    if (!student || !payAmount) return;
+  const handleCollectFee = async (amount: number, method: string, paymentDate: string) => {
+    if (!student) return;
     try {
-      const selectedDate = format(payDate, "yyyy-MM-dd");
-      await paymentService.collectFee(student.id, student.name, parseInt(payAmount), student.next_due_date, payMethod, selectedDate);
+      await paymentService.collectFee(student.id, student.name, amount, student.next_due_date, method, paymentDate);
       toast.success("Fee recorded!");
       setShowPayModal(false);
       fetchData(student.id);
@@ -129,39 +115,14 @@ export default function StudentProfile() {
         </Card>
       </div>
 
-      {/* Collect Fee Modal */}
-      <Dialog open={showPayModal} onOpenChange={v => { if (!v) setShowPayModal(false); }}>
-        <DialogContent className="max-w-sm mx-auto">
-          <DialogHeader><DialogTitle>Collect Fee – {student.name}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label className="text-sm">Amount (₹)</Label><Input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-11" /></div>
-            <div>
-              <Label className="text-sm">Payment Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("w-full h-11 justify-start text-left font-normal", !payDate && "text-muted-foreground")}>
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {payDate ? format(payDate, "dd MMM yyyy") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={payDate} onSelect={(d) => d && setPayDate(d)} initialFocus className="p-3 pointer-events-auto" />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <Label className="text-sm">Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <Button onClick={handleCollectFee} className="w-full h-12 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold">
-              <Check className="h-5 w-5 mr-2" /> Confirm Payment
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CollectFeeModal
+        open={showPayModal}
+        onOpenChange={setShowPayModal}
+        studentName={student.name}
+        defaultAmount={student.monthly_fee}
+        nextDueDate={student.next_due_date}
+        onConfirm={handleCollectFee}
+      />
     </AppLayout>
   );
 }

@@ -12,7 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, Eye, Check, IndianRupee } from "lucide-react";
+import { CollectFeeModal } from "@/components/CollectFeeModal";
+import { Plus, Search, Pencil, Trash2, Eye, IndianRupee } from "lucide-react";
 import { toast } from "sonner";
 import { getStudentStatus, getStatusColor, getStatusLabel, formatDate, formatCurrency, calculateNextDueDate } from "@/lib/dateUtils";
 import type { Tables } from "@/integrations/supabase/types";
@@ -21,7 +22,7 @@ import { format } from "date-fns";
 type Student = Tables<"students">;
 
 const INSTRUMENTS = ["Guitar", "Piano", "Tabla", "Drums", "Vocals", "Other"];
-const PAYMENT_METHODS = ["Cash", "UPI", "Bank Transfer", "Card", "Other"];
+
 
 export default function Students() {
   const { students, fetchStudents } = useAppStore();
@@ -40,9 +41,6 @@ export default function Students() {
   const [joiningDate, setJoiningDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [monthlyFee, setMonthlyFee] = useState("");
 
-  // Payment modal state
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("Cash");
 
   useEffect(() => {
     fetchStudents().then(() => setLoading(false));
@@ -71,8 +69,6 @@ export default function Students() {
 
   const openPayModal = (s: Student) => {
     setPayStudent(s);
-    setPayAmount(String(s.monthly_fee));
-    setPayMethod("Cash");
     setShowPayModal(true);
   };
 
@@ -109,13 +105,10 @@ export default function Students() {
     } catch (err: any) { toast.error(err.message); }
   };
 
-  const handleCollectFee = async () => {
-    if (!payStudent || !payAmount) return;
+  const handleCollectFee = async (amount: number, method: string, paymentDate: string) => {
+    if (!payStudent) return;
     try {
-      await paymentService.collectFee(
-        payStudent.id, payStudent.name,
-        parseInt(payAmount), payStudent.next_due_date, payMethod
-      );
+      await paymentService.collectFee(payStudent.id, payStudent.name, amount, payStudent.next_due_date, method, paymentDate);
       toast.success(`Fee collected from ${payStudent.name}`);
       setShowPayModal(false); fetchStudents();
     } catch (err: any) { toast.error(err.message); }
@@ -213,35 +206,16 @@ export default function Students() {
         </DialogContent>
       </Dialog>
 
-      {/* Collect Fee Modal */}
-      <Dialog open={showPayModal} onOpenChange={v => { if (!v) setShowPayModal(false); }}>
-        <DialogContent className="max-w-sm mx-auto">
-          <DialogHeader>
-            <DialogTitle>Collect Fee – {payStudent?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">Amount (₹)</Label>
-              <Input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="h-11" />
-            </div>
-            <div>
-              <Label className="text-sm">Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="bg-muted rounded-lg p-3 text-xs space-y-1">
-              <p><span className="text-muted-foreground">Student:</span> {payStudent?.name}</p>
-              <p><span className="text-muted-foreground">Current Due:</span> {payStudent ? formatDate(payStudent.next_due_date) : ""}</p>
-              <p><span className="text-muted-foreground">Amount:</span> {formatCurrency(parseInt(payAmount) || 0)}</p>
-            </div>
-            <Button onClick={handleCollectFee} className="w-full h-12 bg-success text-success-foreground hover:bg-success/90 text-base font-semibold">
-              <Check className="h-5 w-5 mr-2" /> Confirm Payment
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {payStudent && (
+        <CollectFeeModal
+          open={showPayModal}
+          onOpenChange={setShowPayModal}
+          studentName={payStudent.name}
+          defaultAmount={payStudent.monthly_fee}
+          nextDueDate={payStudent.next_due_date}
+          onConfirm={handleCollectFee}
+        />
+      )}
     </AppLayout>
   );
 }
